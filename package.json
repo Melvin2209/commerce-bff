@@ -1,0 +1,48 @@
+{
+  "name": "commerce-bff",
+  "version": "1.0.0",
+  "description": "Backend-for-Frontend demo for a fictional shop (ShopLab): Fastify + TypeScript, OAuth2 client credentials, resilience patterns, Redis cache.",
+  "scripts": {
+    "dev:auth": "tsx watch src/services/auth/main.ts",
+    "dev:catalog": "tsx watch src/services/catalog/main.ts",
+    "dev:pricing": "tsx watch src/services/pricing/main.ts",
+    "dev:inventory": "tsx watch src/services/inventory/main.ts",
+    "dev:bff": "tsx watch src/bff/main.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run test/unit",
+    "test:integration": "vitest run test/integration"
+  },
+  "keywords": [],
+  "author": "Melvin2209",
+  "license": "MIT",
+  "dependencies": {
+    "@fastify/rate-limit": "^11.2.1",
+    "@fastify/swagger": "^9.9.2",
+    "@fastify/swagger-ui": "^6.1.2",
+    "@fastify/type-provider-typebox": "^6.3.0",
+    "fastify": "^5.12.7",
+    "ioredis": "^6.0.0",
+    "jose": "^6.2.12",
+    "typebox": "^1.4.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.5",
+    "eslint": "^10.13.0",
+    "pino-pretty": "^13.2.0",
+    "prettier": "^3.9.10",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.2",
+    "vitest": "^5.0.5"
+  },
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  }
+}
