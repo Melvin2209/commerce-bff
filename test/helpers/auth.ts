@@ -27,9 +27,14 @@ export async function startAuthServer(tokenTtlSeconds = 300) {
     clients: TEST_CLIENTS,
     tokenTtlSeconds,
   });
+  // Lets tests check how often the BFF really asks for a token.
+  const stats = { tokenRequests: 0 };
+  app.addHook('onRequest', async (request) => {
+    if (request.url === '/oauth/token') stats.tokenRequests++;
+  });
   await app.listen({ port: 0, host: '127.0.0.1' });
   const url = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
-  return { app, url, jwksUrl: `${url}/.well-known/jwks.json` };
+  return { app, url, stats, jwksUrl: `${url}/.well-known/jwks.json` };
 }
 
 export async function fetchToken(
