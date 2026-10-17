@@ -1,6 +1,7 @@
 import { Type } from 'typebox';
 import { registerChaos, NO_CHAOS } from '../../shared/chaos.js';
 import { createBaseApp } from '../../shared/http-app.js';
+import { registerJwtAuth } from '../../shared/jwt-auth.js';
 import { stock } from '../seed.js';
 import {
   ErrorBody,
@@ -35,6 +36,7 @@ const toDto = (sku: string, quantity: number) => ({ sku, quantity, status: stock
 export function buildInventoryApp(options: ServiceOptions = {}) {
   const app = createBaseApp('inventory', options);
   registerChaos(app, options.chaos ?? NO_CHAOS);
+  if (options.auth) registerJwtAuth(app, options.auth);
 
   const quantities = new Map<string, number>(stock.map((s) => [s.sku, s.quantity]));
 

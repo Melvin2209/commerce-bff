@@ -19,7 +19,6 @@ export function createBaseApp(service: string, options: BaseAppOptions = {}) {
     // across the BFF and every downstream service in the logs.
     requestIdHeader: 'x-request-id',
     genReqId: () => randomUUID(),
-    disableRequestLogging: false,
   }).withTypeProvider<TypeBoxTypeProvider>();
 
   app.addHook('onSend', async (request, reply) => {

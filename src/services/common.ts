@@ -1,12 +1,15 @@
 import { Type } from 'typebox';
 import type { ChaosConfig } from '../shared/chaos.js';
 import type { ChangePublisher } from '../shared/events.js';
+import type { JwtAuthOptions } from '../shared/jwt-auth.js';
 
 export interface ServiceOptions {
   logger?: boolean;
   chaos?: ChaosConfig;
   /** Called after a write so subscribers (the BFF cache) can be notified. */
   publish?: ChangePublisher;
+  /** JWT verification. Always set in main.ts; optional only to keep some tests short. */
+  auth?: JwtAuthOptions;
 }
 
 export const SkuParams = Type.Object({ sku: Type.String({ pattern: '^SL-[0-9]{4}$' }) });

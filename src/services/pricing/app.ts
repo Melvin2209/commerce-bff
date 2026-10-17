@@ -1,6 +1,7 @@
 import { Type } from 'typebox';
 import { registerChaos, NO_CHAOS } from '../../shared/chaos.js';
 import { createBaseApp } from '../../shared/http-app.js';
+import { registerJwtAuth } from '../../shared/jwt-auth.js';
 import { prices, promotions, type PriceEntry } from '../seed.js';
 import {
   ErrorBody,
@@ -27,6 +28,7 @@ export const PriceSchema = Type.Object({
 export function buildPricingApp(options: ServiceOptions = {}) {
   const app = createBaseApp('pricing', options);
   registerChaos(app, options.chaos ?? NO_CHAOS);
+  if (options.auth) registerJwtAuth(app, options.auth);
 
   const bySku = new Map<string, PriceEntry>(prices.map((p) => [p.sku, { ...p }]));
 

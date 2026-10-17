@@ -1,6 +1,7 @@
 import { Type } from 'typebox';
 import { registerChaos, NO_CHAOS } from '../../shared/chaos.js';
 import { createBaseApp } from '../../shared/http-app.js';
+import { registerJwtAuth } from '../../shared/jwt-auth.js';
 import { products, type Product } from '../seed.js';
 import {
   ErrorBody,
@@ -24,6 +25,7 @@ export const ProductSchema = Type.Object({
 export function buildCatalogApp(options: ServiceOptions = {}) {
   const app = createBaseApp('catalog', options);
   registerChaos(app, options.chaos ?? NO_CHAOS);
+  if (options.auth) registerJwtAuth(app, options.auth);
 
   const bySku = new Map<string, Product>(products.map((p) => [p.sku, { ...p }]));
 
