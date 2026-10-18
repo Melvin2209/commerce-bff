@@ -90,6 +90,7 @@ export class ServiceClient {
     }
 
     let res: Response;
+    const startedAt = performance.now();
     try {
       res = await this.fetchFn(`${this.options.baseUrl}${path}`, {
         headers: {
@@ -108,6 +109,17 @@ export class ServiceClient {
         isTimeout ? `timeout after ${this.options.timeoutMs}ms` : (error as Error).message,
       );
     }
+
+    this.options.logger.debug(
+      {
+        service: this.name,
+        path,
+        status: res.status,
+        durationMs: Math.round(performance.now() - startedAt),
+        requestId: context.requestId,
+      },
+      'upstream call',
+    );
 
     // 401: our cached token may have been revoked or the keys rotated.
     // Get a fresh token and try once more (outside of the normal retry budget).

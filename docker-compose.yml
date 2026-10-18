@@ -1,0 +1,98 @@
+# Starts the whole demo: `docker compose up --build`
+#   BFF + Swagger UI  -> http://localhost:3000/docs
+
+x-service: &service
+  build: .
+  image: commerce-bff:local
+  restart: unless-stopped
+  env_file:
+    - path: .env
+      required: false
+  environment: &common-env
+    LOG_LEVEL: ${LOG_LEVEL:-info}
+    REDIS_URL: redis://redis:6379
+    AUTH_ISSUER: http://auth:4000
+    AUTH_AUDIENCE: shoplab-services
+    AUTH_JWKS_URL: http://auth:4000/.well-known/jwks.json
+    CHAOS_LATENCY_MIN_MS: ${CHAOS_LATENCY_MIN_MS:-10}
+    CHAOS_LATENCY_MAX_MS: ${CHAOS_LATENCY_MAX_MS:-40}
+    CHAOS_ERROR_RATE: ${CHAOS_ERROR_RATE:-0.02}
+  healthcheck: &healthcheck
+    test:
+      [
+        'CMD',
+        'node',
+        '-e',
+        "fetch('http://localhost:'+process.env.PORT+'/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+      ]
+    interval: 5s
+    timeout: 3s
+    retries: 10
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports: ['6379:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  auth:
+    <<: *service
+    command: ['node', 'dist/services/auth/main.js']
+    environment:
+      <<: *common-env
+      PORT: 4000
+    ports: ['4000:4000']
+
+  catalog:
+    <<: *service
+    command: ['node', 'dist/services/catalog/main.js']
+    environment:
+      <<: *common-env
+      PORT: 4001
+    ports: ['4001:4001']
+    depends_on:
+      auth: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  pricing:
+    <<: *service
+    command: ['node', 'dist/services/pricing/main.js']
+    environment:
+      <<: *common-env
+      PORT: 4002
+    ports: ['4002:4002']
+    depends_on:
+      auth: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  inventory:
+    <<: *service
+    command: ['node', 'dist/services/inventory/main.js']
+    environment:
+      <<: *common-env
+      PORT: 4003
+    ports: ['4003:4003']
+    depends_on:
+      auth: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  bff:
+    <<: *service
+    command: ['node', 'dist/bff/main.js']
+    environment:
+      <<: *common-env
+      PORT: 3000
+      AUTH_TOKEN_URL: http://auth:4000/oauth/token
+      CATALOG_URL: http://catalog:4001
+      PRICING_URL: http://pricing:4002
+      INVENTORY_URL: http://inventory:4003
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-300}
+    ports: ['3000:3000']
+    depends_on:
+      catalog: { condition: service_healthy }
+      pricing: { condition: service_healthy }
+      inventory: { condition: service_healthy }
