@@ -34,3 +34,24 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+
+  docker:
+    # Builds the image and checks that the whole stack starts and answers.
+    runs-on: ubuntu-latest
+    needs: checks
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the stack
+        run: docker compose up --build --detach --wait --wait-timeout 180
+      - name: Smoke test
+        run: |
+          curl --fail --silent http://localhost:3000/product-page/SL-1002 | tee /dev/stderr | grep -q '"finalPriceCents":124900'
+          curl --fail --silent -X POST http://localhost:3000/cart/items \
+            -H 'content-type: application/json' -d '{"sku":"SL-1001","quantity":2}' | grep -q '"totals"'
+          curl --fail --silent --output /dev/null http://localhost:3000/docs/json
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs
+      - name: Stop the stack
+        if: always()
+        run: docker compose down
