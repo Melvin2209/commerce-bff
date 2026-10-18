@@ -27,8 +27,8 @@ export function configFromEnv(): BffConfig {
       clientSecret: envString('BFF_CLIENT_SECRET', 'dev-bff-secret'),
     },
     resilience: {
-      timeoutMs: envNumber('UPSTREAM_TIMEOUT_MS', 800),
-      retries: envNumber('UPSTREAM_RETRIES', 2),
+      timeoutMs: envNumber('UPSTREAM_TIMEOUT_MS', 500),
+      retries: envNumber('UPSTREAM_RETRIES', 1),
       retryBaseDelayMs: envNumber('UPSTREAM_RETRY_BASE_DELAY_MS', 50),
       retryMaxDelayMs: envNumber('UPSTREAM_RETRY_MAX_DELAY_MS', 500),
       breakerFailureThreshold: envNumber('BREAKER_FAILURE_THRESHOLD', 5),
