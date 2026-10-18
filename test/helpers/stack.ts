@@ -1,5 +1,7 @@
 import type { AddressInfo } from 'node:net';
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
+import { Redis } from 'ioredis';
 import { buildBffApp, type BffDependencies } from '../../src/bff/app.js';
 import type { ResilienceOptions } from '../../src/bff/clients/service-client.js';
 import { buildCatalogApp } from '../../src/services/catalog/app.js';
@@ -7,9 +9,12 @@ import { buildInventoryApp } from '../../src/services/inventory/app.js';
 import { buildPricingApp } from '../../src/services/pricing/app.js';
 import type { ServiceOptions } from '../../src/services/common.js';
 import type { ChaosConfig } from '../../src/shared/chaos.js';
+import { CHANGE_CHANNEL } from '../../src/shared/events.js';
 import { authFor, startAuthServer } from './auth.js';
 
 type ServiceName = 'catalog' | 'pricing' | 'inventory';
+
+export const REDIS_URL = process.env.REDIS_URL ?? 'redis://127.0.0.1:6379';
 
 async function listen(app: FastifyInstance) {
   await app.listen({ port: 0, host: '127.0.0.1' });
@@ -34,14 +39,19 @@ export async function startStack(
   options: {
     resilience?: Partial<ResilienceOptions>;
     deps?: BffDependencies;
-    serviceOptions?: Partial<ServiceOptions>;
+    rateLimitMax?: number;
   } = {},
 ) {
   const auth = await startAuthServer();
+  // Each stack gets its own key prefix so test files can share one Redis.
+  const keyPrefix = `test:${randomUUID()}:`;
+  const publisher = new Redis(REDIS_URL);
   const opts = (name: ServiceName): ServiceOptions => ({
     logger: false,
     auth: authFor(auth.jwksUrl, name),
-    ...options.serviceOptions,
+    publish: async (event) => {
+      await publisher.publish(CHANGE_CHANNEL, JSON.stringify(event));
+    },
   });
   const services = {
     catalog: buildCatalogApp(opts('catalog')),
@@ -65,6 +75,9 @@ export async function startStack(
         clientSecret: 'bff-secret',
       },
       resilience: { ...TEST_RESILIENCE, ...options.resilience },
+      redis: { url: REDIS_URL, keyPrefix },
+      cacheTtlSeconds: { product: 60, price: 60, stock: 60 },
+      rateLimit: { max: options.rateLimitMax ?? 100_000, timeWindowMs: 60_000 },
     },
     options.deps,
   );
@@ -81,8 +94,26 @@ export async function startStack(
         body: JSON.stringify({ latencyMinMs: 0, latencyMaxMs: 0, errorRate: 0, ...config }),
       });
     },
+    /** Direct access to the service apps (e.g. to update a price via inject). */
+    services,
+    keyPrefix,
+    /** Deletes every Redis key of this stack (cache, carts, rate-limit counters). */
+    async flushRedis() {
+      const keys = await publisher.keys(`${keyPrefix}*`);
+      if (keys.length > 0) await publisher.del(...keys);
+    },
+    /** Deletes only cached service data (keeps carts). */
+    async flushCache() {
+      const keys = (
+        await Promise.all(
+          ['product', 'price', 'stock'].map((kind) => publisher.keys(`${keyPrefix}${kind}:*`)),
+        )
+      ).flat();
+      if (keys.length > 0) await publisher.del(...keys);
+    },
     async close() {
       await bff.close();
+      publisher.disconnect();
       await Promise.all(Object.values(services).map((s) => s.close()));
       await auth.app.close();
     },

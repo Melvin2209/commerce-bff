@@ -1,5 +1,11 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { fetchToken } from '../helpers/auth.js';
 import { startStack, type Stack } from '../helpers/stack.js';
+
+async function backofficeToken() {
+  const { body } = await fetchToken(stack.auth.url, 'backoffice', 'backoffice-secret');
+  return body.access_token;
+}
 
 let stack: Stack;
 
@@ -12,6 +18,8 @@ afterAll(async () => {
 afterEach(async () => {
   // Back to a healthy system, and wait for any open circuit to recover.
   for (const s of ['catalog', 'pricing', 'inventory'] as const) await stack.chaos(s, {});
+  // Empty the cache so each scenario really reaches the services.
+  await stack.flushRedis();
   await new Promise((r) => setTimeout(r, 350));
 });
 
@@ -156,12 +164,51 @@ describe('cart', () => {
 
   it('hides totals rather than showing wrong ones when pricing is down', async () => {
     const cartId = (await addItem('SL-1001', 1)).headers['x-cart-id'] as string;
+    await stack.flushCache(); // cold cache: prices must come from the (broken) service
     await stack.chaos('pricing', { errorRate: 1 });
     const res = await stack.bff.inject({ url: '/cart', headers: { 'x-cart-id': cartId } });
     expect(res.statusCode).toBe(200);
     expect(res.json().totals).toBeNull();
     expect(res.json().lines[0].unitPrice).toBeNull();
     expect(res.json().degraded).toEqual(['pricing']);
+  });
+});
+
+describe('cache', () => {
+  it('serves cached data while a service is down', async () => {
+    await stack.bff.inject('/product-page/SL-1004'); // warms the cache
+    await stack.chaos('pricing', { errorRate: 1 });
+    const res = await stack.bff.inject('/product-page/SL-1004');
+    expect(res.json().price.finalPriceCents).toBe(29_665);
+    expect(res.json().degraded).toEqual([]);
+  });
+
+  it('only calls the services for cache misses', async () => {
+    await stack.bff.inject('/product-page/SL-1006');
+    const before = (await stack.bff.inject('/health/upstreams')).json().cache;
+    await stack.bff.inject('/product-page/SL-1006');
+    const after = (await stack.bff.inject('/health/upstreams')).json().cache;
+    expect(after.hits - before.hits).toBe(3); // product + price + stock
+    expect(after.misses - before.misses).toBe(0);
+  });
+
+  it('invalidates a cached price as soon as the pricing service publishes a change', async () => {
+    const first = await stack.bff.inject('/product-page/SL-1007');
+    expect(first.json().price.finalPriceCents).toBe(4_990);
+
+    await stack.services.pricing.inject({
+      method: 'PUT',
+      url: '/prices/SL-1007',
+      headers: { authorization: `Bearer ${await backofficeToken()}` },
+      payload: { basePriceCents: 3_990 },
+    });
+
+    // Pub/sub is asynchronous: wait (briefly) for the BFF to drop the key.
+    await expect
+      .poll(
+        async () => (await stack.bff.inject('/product-page/SL-1007')).json().price.finalPriceCents,
+      )
+      .toBe(3_990);
   });
 });
 

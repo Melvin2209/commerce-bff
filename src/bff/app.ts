@@ -1,7 +1,12 @@
+import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import { Redis } from 'ioredis';
 import { createBaseApp } from '../shared/http-app.js';
-import { InMemoryCartStore, type CartStore } from './cart/cart-store.js';
+import { ItemCache } from './cache/cache.js';
+import { subscribeToInvalidations } from './cache/invalidation.js';
+import type { CartStore } from './cart/cart-store.js';
+import { RedisCartStore } from './cart/redis-cart-store.js';
 import { UpstreamError } from './clients/errors.js';
 import { ServiceClient } from './clients/service-client.js';
 import { TokenManager } from './clients/token-manager.js';
@@ -32,8 +37,35 @@ export async function buildBffApp(config: BffConfig, deps: BffDependencies = {})
     pricing: client('pricing'),
     inventory: client('inventory'),
   };
-  const data = new ShopData(clients);
-  const carts = deps.carts ?? new InMemoryCartStore();
+
+  const redis = new Redis(config.redis.url, {
+    keyPrefix: config.redis.keyPrefix,
+    // Fail fast instead of queueing commands forever when Redis is down.
+    maxRetriesPerRequest: 1,
+    commandTimeout: 500,
+  });
+  const subscriber = redis.duplicate();
+  redis.on('error', (err) => app.log.warn({ err: err.message }, 'redis error'));
+  subscriber.on('error', (err) => app.log.warn({ err: err.message }, 'redis subscriber error'));
+  app.addHook('onClose', async () => {
+    await Promise.allSettled([redis.quit(), subscriber.quit()]);
+  });
+
+  const cache = new ItemCache(redis, config.cacheTtlSeconds, app.log);
+  await subscribeToInvalidations(subscriber, cache, app.log);
+  const data = new ShopData(clients, cache);
+  const carts = deps.carts ?? new RedisCartStore(redis);
+
+  // Shared counter in Redis: the limit holds across several BFF instances.
+  await app.register(rateLimit, {
+    max: config.rateLimit.max,
+    timeWindow: config.rateLimit.timeWindowMs,
+    redis,
+    nameSpace: 'ratelimit:',
+    // Rate limiting must not take the BFF down if Redis has a problem.
+    skipOnError: true,
+    allowList: (request) => request.url.startsWith('/health') || request.url.startsWith('/docs'),
+  });
 
   await app.register(swagger, {
     openapi: {
@@ -72,6 +104,7 @@ export async function buildBffApp(config: BffConfig, deps: BffDependencies = {})
 
   app.get('/health/upstreams', { schema: { tags: ['ops'] } }, async () => ({
     circuits: Object.fromEntries(Object.values(clients).map((c) => [c.name, c.breaker.getState()])),
+    cache: { hits: cache.hits, misses: cache.misses },
   }));
 
   registerProductRoutes(app, data);

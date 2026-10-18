@@ -1,4 +1,5 @@
 import { envNumber, envString } from '../shared/env.js';
+import type { CacheTtls } from './cache/cache.js';
 import type { ResilienceOptions } from './clients/service-client.js';
 
 export interface BffConfig {
@@ -7,6 +8,9 @@ export interface BffConfig {
   services: { catalog: string; pricing: string; inventory: string };
   auth: { tokenUrl: string; clientId: string; clientSecret: string };
   resilience: ResilienceOptions;
+  redis: { url: string; keyPrefix: string };
+  cacheTtlSeconds: CacheTtls;
+  rateLimit: { max: number; timeWindowMs: number };
 }
 
 export function configFromEnv(): BffConfig {
@@ -29,6 +33,19 @@ export function configFromEnv(): BffConfig {
       retryMaxDelayMs: envNumber('UPSTREAM_RETRY_MAX_DELAY_MS', 500),
       breakerFailureThreshold: envNumber('BREAKER_FAILURE_THRESHOLD', 5),
       breakerResetTimeoutMs: envNumber('BREAKER_RESET_TIMEOUT_MS', 10_000),
+    },
+    redis: {
+      url: envString('REDIS_URL', 'redis://redis:6379'),
+      keyPrefix: envString('REDIS_KEY_PREFIX', 'bff:'),
+    },
+    cacheTtlSeconds: {
+      product: envNumber('CACHE_TTL_PRODUCT_SECONDS', 600),
+      price: envNumber('CACHE_TTL_PRICE_SECONDS', 60),
+      stock: envNumber('CACHE_TTL_STOCK_SECONDS', 10),
+    },
+    rateLimit: {
+      max: envNumber('RATE_LIMIT_MAX', 300),
+      timeWindowMs: envNumber('RATE_LIMIT_WINDOW_MS', 60_000),
     },
   };
 }
